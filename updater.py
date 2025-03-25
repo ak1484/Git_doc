@@ -1,5 +1,7 @@
 from repo_parser import get_repo_structure, get_file_metadata
 from doc_generator import generate_file_docs
+from doc_storage import save_file_documentation
+import os
 
 def detect_changes(repo_path, vector_store):
     """
@@ -45,7 +47,7 @@ def detect_changes(repo_path, vector_store):
     
     return changed_files
 
-def update_changed_files(changed_files, vector_store, repo_path):
+def update_changed_files(changed_files, vector_store, repo_path, repo_docs_path=None):
     """
     Update documentation for changed files.
     
@@ -53,6 +55,7 @@ def update_changed_files(changed_files, vector_store, repo_path):
         changed_files (list): List of file paths that have changed
         vector_store (VectorStore): Vector store to update
         repo_path (str): Path to the repository
+        repo_docs_path (str, optional): Path to the documentation root directory
     """
     for file_path in changed_files:
         # Check if file exists (could be deleted)
@@ -69,12 +72,36 @@ def update_changed_files(changed_files, vector_store, repo_path):
                         vector_store.update(file_path, metadata, documentation)
                     else:
                         vector_store.add(file_path, metadata, documentation)
+                    
+                    # Save to mirrored file structure if repo_docs_path is provided
+                    if repo_docs_path:
+                        doc_file_path = save_file_documentation(file_path, documentation, repo_path, repo_docs_path)
+                        print(f"Updated documentation at: {doc_file_path}")
             else:
                 # File was deleted, remove from vector store
                 vector_store.remove(file_path)
+                
+                # Remove from mirrored file structure if repo_docs_path is provided
+                if repo_docs_path:
+                    relative_path = os.path.relpath(file_path, repo_path)
+                    doc_file_path = os.path.join(repo_docs_path, relative_path + ".md")
+                    if os.path.exists(doc_file_path):
+                        os.remove(doc_file_path)
+                        print(f"Removed documentation at: {doc_file_path}")
         except FileNotFoundError:
             # File was deleted, remove from vector store
             vector_store.remove(file_path)
+            
+            # Remove from mirrored file structure if repo_docs_path is provided
+            if repo_docs_path:
+                try:
+                    relative_path = os.path.relpath(file_path, repo_path)
+                    doc_file_path = os.path.join(repo_docs_path, relative_path + ".md")
+                    if os.path.exists(doc_file_path):
+                        os.remove(doc_file_path)
+                        print(f"Removed documentation at: {doc_file_path}")
+                except Exception as e:
+                    print(f"Error removing documentation file: {e}")
     
     # Save the updated vector store
     vector_store.save()

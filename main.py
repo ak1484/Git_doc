@@ -1,11 +1,12 @@
 import os
 import argparse
 from repo_parser import get_repo_structure, get_file_metadata
-from doc_generator import generate_file_docs
+from doc_generator import generate_file_docs, batch_generate_docs
 from vector_store import VectorStore
 from updater import detect_changes, update_changed_files
 from final_doc_generator import generate_final_doc, update_final_doc
 from download_repo import download_github_repo
+from doc_storage import create_mirrored_directory_structure, save_file_documentation
 
 def main():
     parser = argparse.ArgumentParser(description="Dynamic Repository Documentation Generator")
@@ -42,12 +43,24 @@ def main():
     # Path for the final markdown documentation
     final_doc_path = os.path.join(args.output_dir, "repository_documentation.md")
     
+    # Path for the file-by-file documentation with mirrored structure
+    repo_docs_path = os.path.join(args.output_dir, "repo_docs")
+    
+    # Create repo_docs directory if it doesn't exist
+    os.makedirs(repo_docs_path, exist_ok=True)
+    
     # Initialize vector store
     vector_store = VectorStore(vector_db_path)
     
     if args.mode == "initial":
         print(f"Initializing documentation for the entire repository: {repo_path}")
-        initial_documentation(repo_path, vector_store)
+        
+        # Create mirrored directory structure in repo_docs
+        print("Creating mirrored directory structure for file-by-file documentation...")
+        create_mirrored_directory_structure(repo_path, repo_docs_path)
+        
+        # Generate documentation for all files
+        initial_documentation(repo_path, vector_store, repo_docs_path)
         
         print("Generating final documentation...")
         generate_final_doc(vector_store, final_doc_path)
@@ -61,7 +74,7 @@ def main():
         
         if changed_files:
             print(f"Found {len(changed_files)} changed files. Updating documentation...")
-            update_changed_files(changed_files, vector_store, repo_path)
+            update_changed_files(changed_files, vector_store, repo_path, repo_docs_path)
             
             print("Updating final documentation...")
             update_final_doc(changed_files, vector_store, final_doc_path)
@@ -70,8 +83,9 @@ def main():
     
     print("Documentation process completed successfully!")
     print(f"Final documentation saved to: {final_doc_path}")
+    print(f"File-by-file documentation saved to: {repo_docs_path}")
 
-def initial_documentation(repo_path, vector_store):
+def initial_documentation(repo_path, vector_store, repo_docs_path):
     """Generate initial documentation for all files in the repository"""
     # Get all file paths in the repository
     file_paths = get_repo_structure(repo_path)
@@ -89,6 +103,10 @@ def initial_documentation(repo_path, vector_store):
         # Add to vector store
         if documentation:
             vector_store.add(file_path, metadata, documentation)
+            
+            # Save to mirrored file structure
+            doc_file_path = save_file_documentation(file_path, documentation, repo_path, repo_docs_path)
+            print(f"Saved documentation to: {doc_file_path}")
     
     # Save the vector store
     vector_store.save()
